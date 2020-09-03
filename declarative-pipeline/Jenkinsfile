@@ -3,14 +3,13 @@ pipeline {
     environment {
         username = 'jenkins'
         host = '192.168.55.15'
-        source_code = 'https://github.com/sebsto/webapp.git'
         path_script = '/var/lib/jenkins'
         pass_file = '/home/pass.txt'
         username_home = '/home/jenkins'
         tomcat_webapp = '/opt/tomcat/webapps'
         jar_app_name = sh(script: 'basename $WORKSPACE/target/*.jar', ,returnStdout: true).trim()
         war_app_name = sh(script: 'basename $WORKSPACE/target/*.war', ,returnStdout: true).trim()
-    }
+      }
     stages {
         stage('Build') {
             steps {
@@ -22,7 +21,7 @@ pipeline {
                 sh "ls $WORKSPACE/target/"
                 }
         }
-        stage('Check-Result') {
+        stage('Check-Build') {
             steps {
                 script {
                   sh "echo $jar_app_name"
@@ -65,7 +64,16 @@ EOF
                 }
             }
         }
-    }
+        stage('Test')  {
+            environment {
+                app_name = sh(script: 'echo $war_app_name | cut -f 1 -d "."', ,returnStdout: true).trim()
+            }
+            steps {
+                sh "echo $app_name"
+                sh "curl -Is $host:8080/$app_name/"
+                }
+            }
+        }
     post {
         always {
             echo 'Job finished'
@@ -74,7 +82,7 @@ EOF
             echo 'Job build succeeded!'
         }
         unstable {
-            echo 'Job unstable :/'
+            echo 'Job build unstable :/'
         }
         failure {
             echo 'Job build failed :('
