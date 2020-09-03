@@ -3,23 +3,32 @@ pipeline {
     environment {
         username = 'jenkins'
         host = '192.168.55.15'
+        source_code = 'https://github.com/sebsto/webapp.git'
         path_script = '/var/lib/jenkins'
         pass_file = '/home/pass.txt'
         username_home = '/home/jenkins'
         tomcat_webapp = '/opt/tomcat/webapps'
         jar_app_name = sh(script: 'basename $WORKSPACE/target/*.jar', ,returnStdout: true).trim()
+        war_app_name = sh(script: 'basename $WORKSPACE/target/*.war', ,returnStdout: true).trim()
     }
     stages {
         stage('Build') {
             steps {
                 // Get some code from a GitHub repository
-                git 'https://github.com/jenkins-docs/simple-java-maven-app.git'
+                git 'https://github.com/sebsto/webapp.git'
 
                 // Run Maven on a Unix agent.
                 sh "mvn -Dmaven.test.failure.ignore=true clean package"
                 sh "ls $WORKSPACE/target/"
-                sh "echo $jar_app_name"
                 }
+        }
+        stage('Check-Result') {
+            steps {
+                script {
+                  sh "echo $jar_app_name"
+                  sh "echo $war_app_name"
+                  }
+            }
         }
         stage('Pre-Deploy') {
             steps {
@@ -27,8 +36,8 @@ pipeline {
                     cat > "$path_script/script.sh" << "EOF"
 
 #!/bin/bash
-ssh-keygen -q -t rsa -N \'\' -f /var/lib/jenkins/.ssh/id_rsa <<<y 2>&1 >/dev/null
-sshpass -f "${pass_file}" ssh-copy-id -i /var/lib/jenkins/.ssh/id_rsa.pub -o StrictHostKeyChecking=no $username@$host
+ssh-keygen -q -t rsa -N '' -f /var/lib/jenkins/.ssh/id_rsa <<<y 2>&1 >/dev/null
+sshpass -f $pass_file ssh-copy-id -i /var/lib/jenkins/.ssh/id_rsa.pub -o StrictHostKeyChecking=no $username@$host
 ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no $username@$host
 EOF
                     cat $path_script/script.sh
@@ -42,15 +51,21 @@ EOF
         }
         stage('Deploy') {
             steps {
-                sh "scp -i /var/lib/jenkins/.ssh/id_rsa $WORKSPACE/target/*.jar $username@$host:$username_home"
-                sh "ssh jenkins@192.168.55.15 java -jar $username_home/$jar_app_name"
-//                sh "cp $username_home/$java_app_name $tomcat_webapp"
-//                sh "ssh jenkins@192.168.55.15 ls /opt/tomcat/webapps"
-//                sh "ssh jenkins@192.168.55.15 sudo systemctl restart tomcat"
+                script {
+                    if (env.jar_app_name != "*.jar") {
+                        sh "scp -i /var/lib/jenkins/.ssh/id_rsa $WORKSPACE/target/*.jar $username@$host:$username_home"
+                        sh "ssh jenkins@192.168.55.15 java -jar $username_home/$jar_app_name"
+                        return
+                    }  else if (env.war_app_name != "*.war") {
+                        sh "scp -i /var/lib/jenkins/.ssh/id_rsa $WORKSPACE/target/*.war $username@$host:$username_home"
+                        sh "ssh jenkins@192.168.55.15 sudo cp $username_home/$war_app_name $tomcat_webapp"
+                        sh "ssh jenkins@192.168.55.15 ls /opt/tomcat/webapps"
+                        sh "ssh jenkins@192.168.55.15 sudo systemctl restart tomcat"
+                    }
                 }
+            }
         }
     }
-
     post {
         always {
             echo 'Job finished'
